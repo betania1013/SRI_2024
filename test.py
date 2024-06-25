@@ -67,7 +67,7 @@ print(yhat_prob)
 #Evaluate model performance
 accuracy = accuracy_score(y_test, y_pred)
 print(f'Accuracy: {accuracy}')
-from sklearn.metrics import log_loss
+
 
 
 #confusion matrix creation
