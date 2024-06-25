@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pylab as pl
 import numpy as np
-csv_file_path = r"C:\Users\betan\Documents\Raw Data ALL.csv"
+csv_file_path = 'data/Raw Data ALL.csv'
 # Read the CSV file into a DataFrame
 raw_df = pd.read_csv(csv_file_path)
 #returns num of cols and rows in raw data
@@ -15,12 +15,12 @@ raw_df.describe()
 raw_df.info()
 
 #training data
-train_df = pd.read_csv(r"C:\Users\betan\Documents\raw train data.csv")
+train_df = pd.read_csv('data/raw train data.csv')
 #print(train_df.info())
 #check location of null values and see the whole row
 null_rows=train_df[train_df.isna().any(axis=1)]
 print(null_rows)
-test_df=pd.read_csv(r"C:\Users\betan\Documents\raw test data.csv")
+test_df=pd.read_csv('data/raw test data.csv')
 
 
 #import necessary libaries for handling missing data and creating log regression model
