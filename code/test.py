@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import re
 import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
@@ -31,21 +32,21 @@ null_rows = train_df[train_df.isna().any(axis=1)]
 target_column = 'TYPE'
 
 # Prepare training data
-X_train_full = train_df.drop(columns=[target_column])
+X_train_full = train_df.drop(columns=[target_column, 'SUBJECT_ID'])
 y_train_full = train_df[target_column]
 y_test_full = test_df[target_column]
-X_test_full= test_df.drop(columns=[target_column])
+X_test_full= test_df.drop(columns=[target_column, 'SUBJECT_ID'])
 # Encode categorical columns
-categorical_mappings = {}
-for col in X_train_full.columns:
-    if X_train_full[col].dtype == 'object':
-        X_train_full[col], unique_values = X_train_full[col].factorize()
-        categorical_mappings[col] = unique_values
-        # Apply the same mapping to the test set
-        X_test_full[col] = X_test_full[col].map({v: i for i, v in enumerate(unique_values)}).fillna(-1).astype(int)
+columns_to_clean = ['AFP', 'CA19-9', 'CA125']
 
+# Loop through each column and clean/convert both training and test data
+for col in columns_to_clean:
+    # Clean and convert training data
+    X_train_full[col] = pd.to_numeric(X_train_full[col].apply(lambda x: re.sub(r'\\t', '', x) if isinstance(x, str) else x), errors='coerce')
+    
+    # Clean and convert test data
+    X_test_full[col] = pd.to_numeric(X_test_full[col].apply(lambda x: re.sub(r'\\t', '', x) if isinstance(x, str) else x), errors='coerce')
 
-# Split data into training, validation, and test sets
 X_train, X_val, y_train, y_val = train_test_split(X_train_full, y_train_full, test_size=0.2, random_state=42, stratify=y_train_full)
 
 
@@ -75,7 +76,47 @@ y_val_prob = logreg_l1.predict_proba(X_val)  # Predicted probabilities
 print("Validation Set:")
 print(classification_report(y_val, y_val_pred))
 
+# Feature Importance Plot
+# Get feature importance using coefficients (magnitude)
+feature_importance = np.abs(logreg_l1.coef_[0])
+sorted_idx = np.argsort(feature_importance)[::-1]  # Sort feature indices by importance (descending)
 
+# Select top 20 features
+top20_feature_indices = sorted_idx[:20]
+top20_feature_names = X_train_full.columns[top20_feature_indices]
+top20_feature_importance = feature_importance[top20_feature_indices]
+
+# Plotting top 20 features based on importance
+plt.figure(figsize=(10, 8))
+plt.barh(range(len(top20_feature_indices)), top20_feature_importance, align='center')
+plt.yticks(range(len(top20_feature_indices)), top20_feature_names, fontsize=12)
+plt.xlabel('Feature Importance')
+plt.title('Top 20 Feature Importance')
+plt.gca().invert_yaxis()  
+plt.tight_layout()
+plt.show()
+
+
+# ROC Curve and AUC
+fpr, tpr, thresholds = roc_curve(y_val, y_val_prob[:, 1])
+roc_auc = auc(fpr, tpr)
+
+plt.figure()
+plt.plot(fpr, tpr, color='black', lw=2, label='ROC curve (AUC = %0.2f)' % roc_auc)
+plt.plot([0, 1], [0, 1], color='blue', lw=2, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic')
+plt.legend(loc="lower right")
+plt.show()
+#Calculate AUC-ROC Score
+auc_roc = roc_auc_score(y_val, y_val_prob[:, 1])
+print("AUC-ROC Score:", auc_roc)
+#Print 10-fold cross validation AUC-ROC Scores
+cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
+print("Mean AUC-ROC score:", np.mean(cv_scores))
 # Confusion Matrix
 def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
     if normalize:
@@ -106,47 +147,3 @@ plt.figure()
 plot_confusion_matrix(cnf_matrix, classes=['OC', 'BOT'], title='Confusion matrix, without normalization')
 plt.figure()
 plot_confusion_matrix(cnf_matrix, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix')
-
-# Feature Importance Plot
-# Get feature importance using coefficients (magnitude)
-feature_importance = np.abs(logreg_l1.coef_[0])
-sorted_idx = np.argsort(feature_importance)[::-1]  # Sort feature indices by importance (descending)
-
-# Select top 20 features
-top20_feature_indices = sorted_idx[:20]
-top20_feature_names = X_train_full.columns[top20_feature_indices]
-top20_feature_importance = feature_importance[top20_feature_indices]
-
-# Plotting top 20 features based on importance
-plt.figure(figsize=(10, 8))
-plt.barh(range(len(top20_feature_indices)), top20_feature_importance, align='center')
-plt.yticks(range(len(top20_feature_indices)), top20_feature_names, fontsize=12)
-plt.xlabel('Feature Importance')
-plt.title('Top 20 Feature Importance')
-plt.gca().invert_yaxis()  
-plt.tight_layout()
-plt.show()
-# Create pairplot
-sns.pairplot(X_train_full, hue='TYPE')  
-plt.show()
-
-# ROC Curve and AUC
-fpr, tpr, thresholds = roc_curve(y_val, y_val_prob[:, 1])
-roc_auc = auc(fpr, tpr)
-
-plt.figure()
-plt.plot(fpr, tpr, color='black', lw=2, label='ROC curve (AUC = %0.2f)' % roc_auc)
-plt.plot([0, 1], [0, 1], color='blue', lw=2, linestyle='--')
-plt.xlim([0.0, 1.0])
-plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('Receiver Operating Characteristic')
-plt.legend(loc="lower right")
-plt.show()
-#Calculate AUC-ROC Score
-auc_roc = roc_auc_score(y_val, y_val_prob[:, 1])
-print("AUC-ROC Score:", auc_roc)
-#Print 10-fold cross validation AUC-ROC Scores
-cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
-print("Mean AUC-ROC score:", np.mean(cv_scores))
