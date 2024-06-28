@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-#from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_curve, auc, roc_auc_score
@@ -15,15 +14,14 @@ csv_file_path = '../data/Raw Data ALL.csv'
 raw_df = pd.read_csv(csv_file_path)
 
 
-
 train_df = pd.read_csv('../data/raw train data.csv')
 test_df = pd.read_csv('../data/raw test data.csv')
 
 # Print info about data types & null values for all columns
-(raw_df.info())
-(train_df.info())
-(test_df.info())
-#
+raw_df.info()
+raw_df.describe()
+train_df.info()
+test_df.info()
 
 # Check for null values in training data
 null_rows = train_df[train_df.isna().any(axis=1)]
