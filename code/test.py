@@ -5,10 +5,15 @@ import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_curve, auc, roc_auc_score
+from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split,cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SelectFromModel
+from sklearn.model_selection import GridSearchCV
 import seaborn as sns
 import itertools
+import shap
 
 # Read the CSV files into DataFrames
 csv_file_path = '../data/Raw Data ALL.csv'
@@ -54,31 +59,77 @@ X_train, X_val, y_train, y_val = train_test_split(X_train_full, y_train_full, te
 imp = SimpleImputer(strategy='mean')
 imp.fit(X_train)
 
+
 # Transform training and validation data
 X_train = imp.transform(X_train)
 X_val = imp.transform(X_val)
 
 # Ensure test data is also imputed with the same imputer
 X_test_full = imp.transform(X_test_full)
+scaler = StandardScaler()
+scaler.fit(X_train)
+X_train = scaler.transform(X_train)
+X_val= scaler.transform(X_val)
+X_test_full= scaler.transform(X_test_full)
+# Model 1: Logistic Regression with L1 regularization
+param_grid = {
+    'C': [0.001, 0.01, 0.1, 1, 10, 100],  # Regularization parameter values to test
+    'penalty': ['l1'],  # L1 regularization (lasso)
+    'solver': ['saga'],  # Algorithm for optimization
+    'max_iter': [10000],  # Maximum number of iterations
+    'random_state': [42]  # Random state for reproducibility
+}
 
-# Logistic Regression with L1 regularization
-logreg_l1 = LogisticRegression(penalty='l1', solver='saga', max_iter=10000, random_state=42)
+logreg_l1 = LogisticRegression()
 
 # Train Logistic Regression on training data
-logreg_l1.fit(X_train, y_train)
+grid_search = GridSearchCV(estimator=logreg_l1, param_grid=param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
+grid_search.fit(X_train, y_train)
 
-
+# Get the best model
+best_logreg = grid_search.best_estimator_
+print("Best parameters for Logistic Regression:", grid_search.best_params_)
+best_logreg.fit(X_train, y_train)
 # Predict on validation set
-y_val_pred = logreg_l1.predict(X_val)  # Predicted labels
-y_val_prob = logreg_l1.predict_proba(X_val)  # Predicted probabilities
+y_val_pred = best_logreg.predict(X_val)  # Predicted labels
+y_val_prob = best_logreg.predict_proba(X_val)  # Predicted probabilities
 
-# Evaluate performance on validation set
-print("Validation Set:")
+print("Validation Set - Logistic Regression:")
 print(classification_report(y_val, y_val_pred))
+
+#Model 2: Graident Boosting Machine
+
+xgb_param_grid = {
+    'learning_rate': [0.01, 0.1, 0.2, 0.3],
+    'max_depth': [3, 4, 5, 6, 7],
+    'n_estimators': [50, 100, 150, 200],
+    'subsample': [0.8, 0.9, 1.0],
+    'colsample_bytree': [0.8, 0.9, 1.0]
+}
+
+            
+            
+xgb_clf = XGBClassifier(objective='binary:logistic', random_state=42)
+xgb_grid_search = GridSearchCV(estimator=xgb_clf, param_grid=xgb_param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+xgb_grid_search.fit(X_train, y_train)
+best_xgb = xgb_grid_search.best_estimator_
+print("Best parameters for XGBoost:", xgb_grid_search.best_params_)
+#feature selection
+selector = SelectFromModel(best_xgb, threshold="mean", prefit=True)
+X_train_selected = selector.transform(X_train)
+X_val_selected = selector.transform(X_val)
+best_xgb.fit(X_train_selected, y_train)
+
+y_val_pred_xgb = best_xgb.predict(X_val_selected)  
+y_val_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
+
+print("Validation Set - XGBoost:")
+print(classification_report(y_val, y_val_pred_xgb))
+
 
 # Feature Importance Plot
 # Get feature importance using coefficients (magnitude)
-feature_importance = np.abs(logreg_l1.coef_[0])
+feature_importance = np.abs(best_logreg.coef_[0])
 sorted_idx = np.argsort(feature_importance)[::-1]  # Sort feature indices by importance (descending)
 
 # Select top 20 features
@@ -97,7 +148,8 @@ plt.tight_layout()
 plt.show()
 
 
-# ROC Curve and AUC
+
+# ROC Curve and AUC for logistic regression
 fpr, tpr, thresholds = roc_curve(y_val, y_val_prob[:, 1])
 roc_auc = auc(fpr, tpr)
 
@@ -108,7 +160,7 @@ plt.xlim([0.0, 1.0])
 plt.ylim([0.0, 1.05])
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
-plt.title('Receiver Operating Characteristic')
+plt.title('Receiver Operating Characteristic-Logistic Regression')
 plt.legend(loc="lower right")
 plt.show()
 #Calculate AUC-ROC Score
@@ -116,7 +168,30 @@ auc_roc = roc_auc_score(y_val, y_val_prob[:, 1])
 print("AUC-ROC Score:", auc_roc)
 #Print 10-fold cross validation AUC-ROC Scores
 cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
-print("Mean AUC-ROC score:", np.mean(cv_scores))
+print("Mean AUC-ROC score-Logistic Regression:", np.mean(cv_scores))
+
+# ROC Curve and AUC for xgboost 
+fpr, tpr, thresholds = roc_curve(y_val, y_val_prob_xgb)
+roc_auc = auc(fpr, tpr)
+
+plt.figure()
+plt.plot(fpr, tpr, color='black', lw=2, label='ROC curve (AUC = %0.2f)' % roc_auc)
+plt.plot([0, 1], [0, 1], color='blue', lw=2, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic-XGBoost')
+plt.legend(loc="lower right")
+plt.show()
+#Calculate AUC-ROC Score
+auc_roc = roc_auc_score(y_val, y_val_prob_xgb)
+print("AUC-ROC Score-XGBoost:", auc_roc)
+#Print 10-fold cross validation AUC-ROC Scores
+cv_scores_xgb = cross_val_score(xgb_clf, X_train, y_train, cv=10, scoring='roc_auc')
+print("Mean AUC-ROC score-XGBoost:", np.mean(cv_scores_xgb))
+
+
 # Confusion Matrix
 def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
     if normalize:
@@ -142,8 +217,40 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
 
-cnf_matrix = confusion_matrix(y_val, y_val_pred)
+# Confusion Matrix for Logistic Regression
+cnf_matrix_logreg = confusion_matrix(y_val, y_val_pred)
 plt.figure()
-plot_confusion_matrix(cnf_matrix, classes=['OC', 'BOT'], title='Confusion matrix, without normalization')
+plot_confusion_matrix(cnf_matrix_logreg, classes=['OC', 'BOT'], title='Confusion matrix - Logistic Regression')
 plt.figure()
-plot_confusion_matrix(cnf_matrix, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix')
+plot_confusion_matrix(cnf_matrix_logreg, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - Logistic Regression')
+
+# Confusion Matrix for XGBoost
+cnf_matrix_gb = confusion_matrix(y_val, y_val_pred_xgb)
+plt.figure()
+plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - XGBoost')
+plt.figure()
+plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - XGBoost')
+
+plt.show()
+
+
+# SHAP Analysis for Logistic Regression
+shap.initjs()
+
+explainer = shap.Explainer(best_logreg, X_train)
+shap_values = explainer(X_val)
+
+# Summary Plot
+plt.title("SHAP Summary Plot - Logistic Regression")
+shap.summary_plot(shap_values, X_val, feature_names=X_train_full.columns)
+
+# SHAP Analysis for Gradient Boosting
+shap.initjs()
+explainer_xgb = shap.Explainer(best_xgb)
+
+# Summary Plot
+shap_values_xgb = explainer_xgb(X_val_selected)  
+plt.title("SHAP Summary Plot - XGBoost")
+
+shap.summary_plot(shap_values_xgb, X_val_selected, feature_names=X_train_full.columns)
+
