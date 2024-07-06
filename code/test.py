@@ -132,7 +132,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.inspection import permutation_importance
 # Neural Network with Grid Search and Feature Selection
 mlp_param_grid = {
-    'hidden_layer_sizes': [(50, 50), (100,), (100, 100), (100, 50), (50, 50, 50), (200, 100), (200, 200), (300,200),(300,300), (300,100)],
+    'hidden_layer_sizes': [(50, 50), (100,), (100, 100), (100, 50), (50, 50, 50), (200, 100), (200, 200)],
     'activation': ['tanh', 'relu', 'logistic'],
     'solver': ['sgd', 'adam', 'lbfgs'],
     'alpha': [0.0001, 0.001, 0.01, 0.05, 0.1],
@@ -170,7 +170,8 @@ best_mlp.fit(X_train_mlp, y_train)
 # Predict on validation set
 y_val_pred_mlp = best_mlp.predict(X_val_mlp)
 y_val_prob_mlp = best_mlp.predict_proba(X_val_mlp)[:, 1]
-
+print("Validation Set - MLP:")
+print(classification_report(y_val, y_val_pred_mlp))
 
 # Feature Importance Plot
 # Get feature importance using coefficients (magnitude)
