@@ -126,6 +126,51 @@ y_val_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
 print("Validation Set - XGBoost:")
 print(classification_report(y_val, y_val_pred_xgb))
 
+## Model 3: Artifical Neural Network
+
+from sklearn.neural_network import MLPClassifier
+from sklearn.inspection import permutation_importance
+# Neural Network with Grid Search and Feature Selection
+mlp_param_grid = {
+    'hidden_layer_sizes': [(50, 50), (100,), (100, 100), (100, 50), (50, 50, 50), (200, 100), (200, 200), (300,200),(300,300), (300,100)],
+    'activation': ['tanh', 'relu', 'logistic'],
+    'solver': ['sgd', 'adam', 'lbfgs'],
+    'alpha': [0.0001, 0.001, 0.01, 0.05, 0.1],
+    'learning_rate': ['constant', 'adaptive', 'invscaling'],
+    'learning_rate_init': [0.0001, 0.001, 0.01, 0.1],
+    'max_iter': [500, 1000, 2000],
+    'early_stopping': [True],
+    'validation_fraction': [0.1, 0.15, 0.2]
+}
+
+mlp_clf = MLPClassifier(random_state=42)
+mlp_grid_search = GridSearchCV(estimator=mlp_clf, param_grid=mlp_param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
+
+mlp_grid_search.fit(X_train, y_train)
+
+best_mlp = mlp_grid_search.best_estimator_
+perm_importance = permutation_importance(best_mlp, X_val, y_val, n_repeats=10, random_state=42, scoring='roc_auc')
+
+print("Best parameters for MLPClassifier:", mlp_grid_search.best_params_)
+
+
+# Set a threshold for selecting features based on permutation importance scores
+threshold = 0.001 
+
+# Select features based on the threshold
+selected_mlp =np.where(perm_importance.importances_mean > threshold)[0]
+# Filter data to include only selected features
+X_train_mlp = X_train[:,selected_mlp]
+X_val_mlp= X_val[:,selected_mlp]
+X_test_mlp = X_test_full[:,selected_mlp]
+
+# Train MLPClassifier on selected features
+best_mlp.fit(X_train_mlp, y_train)
+
+# Predict on validation set
+y_val_pred_mlp = best_mlp.predict(X_val_mlp)
+y_val_prob_mlp = best_mlp.predict_proba(X_val_mlp)[:, 1]
+
 
 # Feature Importance Plot
 # Get feature importance using coefficients (magnitude)
@@ -170,7 +215,7 @@ print("AUC-ROC Score:", auc_roc)
 cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
 print("Mean AUC-ROC score-Logistic Regression:", np.mean(cv_scores))
 
-# ROC Curve and AUC for xgboost 
+# ROC Curve and AUC for XGBoost 
 fpr, tpr, thresholds = roc_curve(y_val, y_val_prob_xgb)
 roc_auc = auc(fpr, tpr)
 
@@ -190,6 +235,30 @@ print("AUC-ROC Score-XGBoost:", auc_roc)
 #Print 10-fold cross validation AUC-ROC Scores
 cv_scores_xgb = cross_val_score(xgb_clf, X_train, y_train, cv=10, scoring='roc_auc')
 print("Mean AUC-ROC score-XGBoost:", np.mean(cv_scores_xgb))
+
+# ROC Curve and AUC for MLP 
+fpr, tpr, thresholds = roc_curve(y_val, y_val_prob_mlp)
+roc_auc = auc(fpr, tpr)
+
+plt.figure()
+plt.plot(fpr, tpr, color='black', lw=2, label='ROC curve (AUC = %0.2f)' % roc_auc)
+plt.plot([0, 1], [0, 1], color='blue', lw=2, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver Operating Characteristic-MLP')
+plt.legend(loc="lower right")
+plt.show()
+# Calculate AUC-ROC Score
+auc_roc = roc_auc_score(y_val, y_val_prob_mlp)
+print("AUC-ROC Score-MLP:", auc_roc)
+# Print 10-fold cross validation AUC-ROC Scores
+cv_scores_mlp = cross_val_score(best_mlp, X_train_mlp, y_train, cv=10, scoring='roc_auc')
+print("Mean AUC-ROC score-MLP:", np.mean(cv_scores_mlp))
+
+
+
 
 
 # Confusion Matrix
@@ -230,6 +299,13 @@ plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - XGBoost')
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - XGBoost')
+# Confusion Matrix for MLP
+cnf_matrix_gb = confusion_matrix(y_val, y_val_pred_mlp)
+plt.figure()
+plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - MLP')
+plt.figure()
+plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - MLP')
+
 
 plt.show()
 
@@ -246,7 +322,7 @@ shap.summary_plot(shap_values, X_val, feature_names=X_train_full.columns)
 
 # SHAP Analysis for Gradient Boosting
 shap.initjs()
-explainer_xgb = shap.Explainer(best_xgb)
+explainer_xgb = shap.TreeExplainer(best_xgb)
 
 # Summary Plot
 shap_values_xgb = explainer_xgb(X_val_selected)  
@@ -254,3 +330,13 @@ plt.title("SHAP Summary Plot - XGBoost")
 
 shap.summary_plot(shap_values_xgb, X_val_selected, feature_names=X_train_full.columns)
 
+# SHAP Analysis for MLP
+shap.initjs()
+explainer_mlp = shap.DeepExplainer(best_mlp)
+
+# Summary Plot
+shap_values_mlp = explainer_mlp(X_val_mlp)  
+plt.title("SHAP Summary Plot - MLP")
+
+shap.summary_plot(shap_values_mlp, X_val_mlp, feature_names=X_train_full.columns)
+plt.show()
