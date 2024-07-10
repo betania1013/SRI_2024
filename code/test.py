@@ -20,9 +20,6 @@ import shap
 csv_file_path = '../data/Raw Data ALL.csv'
 raw_df = pd.read_csv(csv_file_path)
 
-
-
-
 # Print info about data types & null values for all columns
 raw_df.info()
 raw_df.describe()
@@ -39,16 +36,12 @@ y = raw_df['TYPE']
 # Encode categorical columns
 columns_to_clean = ['AFP', 'CA19-9', 'CA125']
 
-# Loop through each column and clean/convert both training and test data
 for col in columns_to_clean:
-    # Clean and convert training data
     X[col] = pd.to_numeric(X[col].apply(lambda x: re.sub(r'\\t', '', x) if isinstance(x, str) else x), errors='coerce')
     
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-
-# Imputer to fill missing values with mean value (fit on training data only)
 imp = SimpleImputer(strategy='mean')
 imp.fit(X_train)
 
@@ -64,11 +57,11 @@ X_train = scaler.transform(X_train)
 X_test= scaler.transform(X_test)
 # Model 1: Logistic Regression with L1 regularization
 param_grid = {
-    'C': [0.001, 0.01, 0.1, 1, 10, 100],  # Regularization parameter values to test
+    'C': [0.001, 0.01, 0.1, 1, 10, 100], 
     'penalty': ['l1'],  # L1 regularization (lasso)
-    'solver': ['saga'],  # Algorithm for optimization
-    'max_iter': [10000],  # Maximum number of iterations
-    'random_state': [42]  # Random state for reproducibility
+    'solver': ['saga'],  
+    'max_iter': [10000], 
+    'random_state': [42]  
 }
 
 logreg_l1 = LogisticRegression()
@@ -82,11 +75,11 @@ best_logreg = grid_search.best_estimator_
 print("Best parameters for Logistic Regression:", grid_search.best_params_)
 best_logreg.fit(X_train, y_train)
 # Predict on test set
-y_val_pred = best_logreg.predict(X_test)  # Predicted labels
-y_val_prob = best_logreg.predict_proba(X_test)  # Predicted probabilities
+y_test_pred = best_logreg.predict(X_test) 
+y_test_prob = best_logreg.predict_proba(X_test)  
 
 print("Test Set - Logistic Regression:")
-print(classification_report(y_test, y_val_pred))
+print(classification_report(y_test, y_test_pred))
 
 #Model 2: Graident Boosting Machine
 
@@ -98,8 +91,7 @@ xgb_param_grid = {
     'colsample_bytree': [0.8, 0.9, 1.0]
 }
 
-            
-            
+                    
 xgb_clf = XGBClassifier(objective='binary:logistic', random_state=42)
 xgb_grid_search = GridSearchCV(estimator=xgb_clf, param_grid=xgb_param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
 xgb_grid_search.fit(X_train, y_train)
@@ -111,25 +103,23 @@ X_train_selected = selector.transform(X_train)
 X_val_selected = selector.transform(X_test)
 best_xgb.fit(X_train_selected, y_train)
 
-y_val_pred_xgb = best_xgb.predict(X_val_selected)  
-y_val_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
+y_test_pred_xgb = best_xgb.predict(X_val_selected)  
+y_test_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
 
 print("Test Set - XGBoost:")
-print(classification_report(y_test, y_val_pred_xgb))
+print(classification_report(y_test, y_test_pred_xgb))
 
 ## Model 3: Artifical Neural Network
 from tensorflow.keras.models import load_model
 
 # Load the saved model
 best_mlp = load_model('bestmodel.keras')
-# Load the MLP model from pickle file
-
 
 # Predict on test set using the loaded MLP model
-y_val_pred_mlp = best_mlp.predict(X_test)
-y_val_pred_mlp = (y_val_pred_mlp > 0.5).astype(int) 
+y_test_pred_mlp = best_mlp.predict(X_test)
+y_test_pred_mlp = (y_test_pred_mlp > 0.5).astype(int) 
 print("Test Set - MLP:")
-print(classification_report(y_test, y_val_pred_mlp))
+print(classification_report(y_test, y_test_pred_mlp))
 
 #Model 4: Random Forest
 from sklearn.ensemble import RandomForestClassifier
@@ -152,7 +142,7 @@ rf_param_grid = {
     'random_state': [42]
 }
 
-# Perform GridSearchCV with feature-selected data
+# Perform GridSearchCV 
 rf_grid_search = GridSearchCV(estimator=rf, param_grid=rf_param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
 rf_grid_search.fit(X_train_selected, y_train)
 
@@ -160,21 +150,18 @@ rf_grid_search.fit(X_train_selected, y_train)
 best_rf = rf_grid_search.best_estimator_
 print("Best parameters for Random Forest:", rf_grid_search.best_params_)
 
-# Transform test set with feature selection
-X_test_selected_rf = selector.transform(X_test)
 
 # Predict on test set
-y_val_pred_rf = best_rf.predict(X_test_selected_rf)
-y_val_prob_rf = best_rf.predict_proba(X_test_selected_rf)[:, 1]
+y_test_pred_rf = best_rf.predict(X_test_selected_rf)
+y_test_prob_rf = best_rf.predict_proba(X_test_selected_rf)[:, 1]
 
 # Print classification report
 print("Test Set - Random Forest:")
-print(classification_report(y_test, y_val_pred_rf))
+print(classification_report(y_test, y_test_pred_rf))
 
 # Feature Importance Plot
-# Get feature importance using coefficients (magnitude)
 feature_importance = np.abs(best_logreg.coef_[0])
-sorted_idx = np.argsort(feature_importance)[::-1]  # Sort feature indices by importance (descending)
+sorted_idx = np.argsort(feature_importance)[::-1] 
 
 # Select top 20 features
 top20_feature_indices = sorted_idx[:20]
@@ -194,7 +181,7 @@ plt.show()
 
 
 # ROC Curve and AUC for logistic regression
-fpr, tpr, thresholds = roc_curve(y_test, y_val_prob[:, 1])
+fpr, tpr, thresholds = roc_curve(y_test, y_test_prob[:, 1])
 roc_auc = auc(fpr, tpr)
 
 plt.figure()
@@ -208,14 +195,14 @@ plt.title('Receiver Operating Characteristic-Logistic Regression')
 plt.legend(loc="lower right")
 plt.show()
 #Calculate AUC-ROC Score
-auc_roc = roc_auc_score(y_test, y_val_prob[:, 1])
+auc_roc = roc_auc_score(y_test, y_test_prob[:, 1])
 print("AUC-ROC Score:", auc_roc)
 #Print 10-fold cross validation AUC-ROC Scores
 cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
 print("Mean AUC-ROC score-Logistic Regression:", np.mean(cv_scores))
 
 # ROC Curve and AUC for XGBoost 
-fpr, tpr, thresholds = roc_curve(y_test, y_val_prob_xgb)
+fpr, tpr, thresholds = roc_curve(y_test, y_test_prob_xgb)
 roc_auc = auc(fpr, tpr)
 
 plt.figure()
@@ -229,14 +216,14 @@ plt.title('Receiver Operating Characteristic-XGBoost')
 plt.legend(loc="lower right")
 plt.show()
 #Calculate AUC-ROC Score
-auc_roc = roc_auc_score(y_test, y_val_prob_xgb)
+auc_roc = roc_auc_score(y_test, y_test_prob_xgb)
 print("AUC-ROC Score-XGBoost:", auc_roc)
 #Print 10-fold cross validation AUC-ROC Scores
 cv_scores_xgb = cross_val_score(xgb_clf, X_train, y_train, cv=10, scoring='roc_auc')
 print("Mean AUC-ROC score-XGBoost:", np.mean(cv_scores_xgb))
 
 # ROC Curve and AUC for MLP 
-fpr, tpr, thresholds = roc_curve(y_test, y_val_pred_mlp)
+fpr, tpr, thresholds = roc_curve(y_test, y_test_pred_mlp)
 roc_auc = auc(fpr, tpr)
 
 plt.figure()
@@ -250,18 +237,12 @@ plt.title('Receiver Operating Characteristic-MLP')
 plt.legend(loc="lower right")
 plt.show()
 # Calculate AUC-ROC Score
-auc_roc = roc_auc_score(y_test, y_val_pred_mlp)
+auc_roc = roc_auc_score(y_test, y_test_pred_mlp)
 print("AUC-ROC Score-MLP:", auc_roc)
 
 
-
-
-
-
-
-
 # ROC Curve and AUC for RF 
-fpr, tpr, thresholds = roc_curve(y_test, y_val_prob_rf)
+fpr, tpr, thresholds = roc_curve(y_test, y_test_prob_rf)
 roc_auc = auc(fpr, tpr)
 
 plt.figure()
@@ -275,7 +256,7 @@ plt.title('Receiver Operating Characteristic-RF')
 plt.legend(loc="lower right")
 plt.show()
 # Calculate AUC-ROC Score
-auc_roc = roc_auc_score(y_test, y_val_prob_rf)
+auc_roc = roc_auc_score(y_test, y_test_prob_rf)
 print("AUC-ROC Score-RF:", auc_roc)
 
 
@@ -308,26 +289,26 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
     plt.xlabel('Predicted label')
 
 # Confusion Matrix for Logistic Regression
-cnf_matrix_logreg = confusion_matrix(y_test, y_val_pred)
+cnf_matrix_logreg = confusion_matrix(y_test, y_test_pred)
 plt.figure()
 plot_confusion_matrix(cnf_matrix_logreg, classes=['OC', 'BOT'], title='Confusion matrix - Logistic Regression')
 plt.figure()
 plot_confusion_matrix(cnf_matrix_logreg, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - Logistic Regression')
 
 # Confusion Matrix for XGBoost
-cnf_matrix_gb = confusion_matrix(y_test, y_val_pred_xgb)
+cnf_matrix_gb = confusion_matrix(y_test, y_test_pred_xgb)
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - XGBoost')
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - XGBoost')
 # Confusion Matrix for MLP
-cnf_matrix_gb = confusion_matrix(y_test, y_val_pred_mlp)
+cnf_matrix_gb = confusion_matrix(y_test, y_test_pred_mlp)
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - MLP')
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], normalize=True, title='Normalized confusion matrix - MLP')
 #Confusion Matrix for RF
-cnf_matrix_gb = confusion_matrix(y_test, y_val_pred_rf)
+cnf_matrix_gb = confusion_matrix(y_test, y_test_pred_rf)
 plt.figure()
 plot_confusion_matrix(cnf_matrix_gb, classes=['OC', 'BOT'], title='Confusion matrix - RF')
 plt.figure()
@@ -365,9 +346,6 @@ plt.title("SHAP Summary Plot - MLP")
 shap.summary_plot(shap_values_mlp, X_test, feature_names=X.columns)
 
 # SHAP Analysis for RF
-shap.initjs()
-
-# Create a TreeExplainer
 explainer_rf = shap.TreeExplainer(best_rf)
 
 # Compute SHAP values
