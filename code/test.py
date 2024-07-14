@@ -16,7 +16,6 @@ import seaborn as sns
 import itertools
 import shap
 
-# Read the CSV files into DataFrames
 csv_file_path = '../data/Raw Data ALL.csv'
 raw_df = pd.read_csv(csv_file_path)
 
@@ -46,19 +45,19 @@ imp = SimpleImputer(strategy='mean')
 imp.fit(X_train)
 
 
-# Transform training and testing data
+#Impute and scale data
 X_train = imp.transform(X_train)
 X_test = imp.transform(X_test)
 
-# Ensure test data is also imputed with the same imputer
 scaler = StandardScaler()
 scaler.fit(X_train)
 X_train = scaler.transform(X_train)
 X_test= scaler.transform(X_test)
+
 # Model 1: Logistic Regression with L1 regularization
 param_grid = {
     'C': [0.001, 0.01, 0.1, 1, 10, 100], 
-    'penalty': ['l1'],  # L1 regularization (lasso)
+    'penalty': ['l1'], 
     'solver': ['saga'],  
     'max_iter': [10000], 
     'random_state': [42]  
@@ -71,9 +70,11 @@ grid_search = GridSearchCV(estimator=logreg_l1, param_grid=param_grid, cv=10, sc
 grid_search.fit(X_train, y_train)
 
 # Get the best model
+
 best_logreg = grid_search.best_estimator_
 print("Best parameters for Logistic Regression:", grid_search.best_params_)
 best_logreg.fit(X_train, y_train)
+
 # Predict on test set
 y_test_pred = best_logreg.predict(X_test) 
 y_test_prob = best_logreg.predict_proba(X_test)  
@@ -81,7 +82,7 @@ y_test_prob = best_logreg.predict_proba(X_test)
 print("Test Set - Logistic Regression:")
 print(classification_report(y_test, y_test_pred))
 
-#Model 2: Graident Boosting Machine
+#Model 2: XGBoost
 
 xgb_param_grid = {
     'learning_rate': [0.01, 0.1, 0.2, 0.3],
@@ -97,11 +98,12 @@ xgb_grid_search = GridSearchCV(estimator=xgb_clf, param_grid=xgb_param_grid, cv=
 xgb_grid_search.fit(X_train, y_train)
 best_xgb = xgb_grid_search.best_estimator_
 print("Best parameters for XGBoost:", xgb_grid_search.best_params_)
-#feature selection
+#Feature selection
 selector = SelectFromModel(best_xgb, threshold="mean", prefit=True)
 X_train_selected = selector.transform(X_train)
 X_val_selected = selector.transform(X_test)
 best_xgb.fit(X_train_selected, y_train)
+
 
 y_test_pred_xgb = best_xgb.predict(X_val_selected)  
 y_test_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
@@ -109,13 +111,13 @@ y_test_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
 print("Test Set - XGBoost:")
 print(classification_report(y_test, y_test_pred_xgb))
 
-## Model 3: Artifical Neural Network
+## Model 3: MLP
 from tensorflow.keras.models import load_model
 
-# Load the saved model
 best_mlp = load_model('bestmodel.keras')
 
-# Predict on test set using the loaded MLP model
+# Predict on test set
+
 y_test_pred_mlp = best_mlp.predict(X_test)
 y_test_pred_mlp = (y_test_pred_mlp > 0.5).astype(int) 
 print("Test Set - MLP:")
@@ -126,10 +128,13 @@ from sklearn.ensemble import RandomForestClassifier
 
 rf = RandomForestClassifier(random_state=42)
 
-# Perform feature selection based on importance
+# Perform feature selection
 selector = SelectFromModel(estimator=rf)
 X_train_selected = selector.fit_transform(X_train, y_train)
 X_test_selected_rf = selector.transform(X_test)
+selected_features_indices = selector.get_support(indices=True)
+
+selected_feature_names = X.columns[selected_features_indices]
 
 
 # Define parameter grid
@@ -141,12 +146,10 @@ rf_param_grid = {
     'bootstrap': [True, False],
     'random_state': [42]
 }
-
-# Perform GridSearchCV 
+#GridSearchCV
 rf_grid_search = GridSearchCV(estimator=rf, param_grid=rf_param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
 rf_grid_search.fit(X_train_selected, y_train)
 
-# Get the best model
 best_rf = rf_grid_search.best_estimator_
 print("Best parameters for Random Forest:", rf_grid_search.best_params_)
 
@@ -177,7 +180,6 @@ plt.title('Top 20 Feature Importance')
 plt.gca().invert_yaxis()  
 plt.tight_layout()
 plt.show()
-
 
 
 # ROC Curve and AUC for logistic regression
@@ -218,6 +220,7 @@ plt.show()
 #Calculate AUC-ROC Score
 auc_roc = roc_auc_score(y_test, y_test_prob_xgb)
 print("AUC-ROC Score-XGBoost:", auc_roc)
+
 #Print 10-fold cross validation AUC-ROC Scores
 cv_scores_xgb = cross_val_score(xgb_clf, X_train, y_train, cv=10, scoring='roc_auc')
 print("Mean AUC-ROC score-XGBoost:", np.mean(cv_scores_xgb))
@@ -258,9 +261,6 @@ plt.show()
 # Calculate AUC-ROC Score
 auc_roc = roc_auc_score(y_test, y_test_prob_rf)
 print("AUC-ROC Score-RF:", auc_roc)
-
-
-
 
 
 # Confusion Matrix
@@ -327,7 +327,7 @@ shap_values = explainer(X_test)
 plt.title("SHAP Summary Plot - Logistic Regression")
 shap.summary_plot(shap_values, X_test, feature_names=X.columns)
 
-# SHAP Analysis for Gradient Boosting
+# SHAP Analysis for XGBoost
 explainer_xgb = shap.TreeExplainer(best_xgb)
 
 # Summary Plot
@@ -348,10 +348,11 @@ shap.summary_plot(shap_values_mlp, X_test, feature_names=X.columns)
 # SHAP Analysis for RF
 explainer_rf = shap.TreeExplainer(best_rf)
 
-# Compute SHAP values
-shap_values_rf = explainer_rf.shap_values(X_test_selected_rf)
-
-# Summary Plot
-plt.title("SHAP Summary Plot - Random Forest")
-shap.summary_plot(shap_values_rf, X_test_selected_rf, feature_names=X.columns)
+shaprf = explainer_rf.shap_values(X_test_selected_rf)
+#Summary Plot
+shaprf = shaprf[:, :, 1]
+plt.title("SHAP Summary Plot - RF")
+shap.summary_plot(shaprf, X_test_selected_rf, feature_names=selected_feature_names)
 plt.show()
+
+
