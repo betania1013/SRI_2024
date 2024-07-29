@@ -19,7 +19,7 @@ import shap
 csv_file_path = '../data/Raw Data ALL.csv'
 raw_df = pd.read_csv(csv_file_path)
 
-# Print info about data types & null values for all columns
+# Print info about data types & null values
 raw_df.info()
 raw_df.describe()
 
@@ -32,14 +32,15 @@ null_rows = raw_df[raw_df.isna().any(axis=1)]
 X = raw_df.drop(columns=['TYPE', 'SUBJECT_ID'])
 y = raw_df['TYPE']
 
-# Encode categorical columns
-columns_to_clean = ['AFP', 'CA19-9', 'CA125']
+# Encode categorical values
+col_clean = ['AFP', 'CA19-9', 'CA125']
 
-for col in columns_to_clean:
-    X[col] = pd.to_numeric(X[col].apply(lambda x: re.sub(r'\\t', '', x) if isinstance(x, str) else x), errors='coerce')
-    
+for col in col_clean:
+    X[col] = X[col].apply(lambda x: re.sub(r'><', '', x) if isinstance(x, str) else x)
+    X[col] = pd.to_numeric(X[col], errors='coerce')
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
 
 imp = SimpleImputer(strategy='mean')
 imp.fit(X_train)
@@ -68,9 +69,6 @@ logreg_l1 = LogisticRegression()
 # Train Logistic Regression on training data
 grid_search = GridSearchCV(estimator=logreg_l1, param_grid=param_grid, cv=10, scoring='roc_auc', n_jobs=-1)
 grid_search.fit(X_train, y_train)
-
-# Get the best model
-
 best_logreg = grid_search.best_estimator_
 print("Best parameters for Logistic Regression:", grid_search.best_params_)
 best_logreg.fit(X_train, y_train)
@@ -78,7 +76,7 @@ best_logreg.fit(X_train, y_train)
 # Predict on test set
 y_test_pred = best_logreg.predict(X_test) 
 y_test_prob = best_logreg.predict_proba(X_test)  
-
+# Print classification report
 print("Test Set - Logistic Regression:")
 print(classification_report(y_test, y_test_pred))
 
@@ -99,7 +97,7 @@ xgb_grid_search.fit(X_train, y_train)
 best_xgb = xgb_grid_search.best_estimator_
 print("Best parameters for XGBoost:", xgb_grid_search.best_params_)
 #Feature selection
-selector = SelectFromModel(best_xgb, threshold="mean", prefit=True)
+selector = SelectFromModel(best_xgb, prefit=True)
 X_train_selected = selector.transform(X_train)
 X_val_selected = selector.transform(X_test)
 best_xgb.fit(X_train_selected, y_train)
@@ -107,7 +105,7 @@ best_xgb.fit(X_train_selected, y_train)
 
 y_test_pred_xgb = best_xgb.predict(X_val_selected)  
 y_test_prob_xgb = best_xgb.predict_proba(X_val_selected)[:, 1]
-
+# Print classification report
 print("Test Set - XGBoost:")
 print(classification_report(y_test, y_test_pred_xgb))
 
@@ -120,6 +118,7 @@ best_mlp = load_model('bestmodel.keras')
 
 y_test_pred_mlp = best_mlp.predict(X_test)
 y_test_pred_mlp = (y_test_pred_mlp > 0.5).astype(int) 
+# Print classification report
 print("Test Set - MLP:")
 print(classification_report(y_test, y_test_pred_mlp))
 
@@ -128,7 +127,7 @@ from sklearn.ensemble import RandomForestClassifier
 
 rf = RandomForestClassifier(random_state=42)
 
-# Perform feature selection
+#Feature selection
 selector = SelectFromModel(estimator=rf)
 X_train_selected = selector.fit_transform(X_train, y_train)
 X_test_selected_rf = selector.transform(X_test)
@@ -161,6 +160,7 @@ y_test_prob_rf = best_rf.predict_proba(X_test_selected_rf)[:, 1]
 # Print classification report
 print("Test Set - Random Forest:")
 print(classification_report(y_test, y_test_pred_rf))
+
 
 # Feature Importance Plot
 feature_importance = np.abs(best_logreg.coef_[0])
@@ -199,9 +199,6 @@ plt.show()
 #Calculate AUC-ROC Score
 auc_roc = roc_auc_score(y_test, y_test_prob[:, 1])
 print("AUC-ROC Score:", auc_roc)
-#Print 10-fold cross validation AUC-ROC Scores
-cv_scores = cross_val_score(logreg_l1, X_train, y_train, cv=10, scoring='roc_auc')
-print("Mean AUC-ROC score-Logistic Regression:", np.mean(cv_scores))
 
 # ROC Curve and AUC for XGBoost 
 fpr, tpr, thresholds = roc_curve(y_test, y_test_prob_xgb)
@@ -221,10 +218,6 @@ plt.show()
 auc_roc = roc_auc_score(y_test, y_test_prob_xgb)
 print("AUC-ROC Score-XGBoost:", auc_roc)
 
-#Print 10-fold cross validation AUC-ROC Scores
-cv_scores_xgb = cross_val_score(xgb_clf, X_train, y_train, cv=10, scoring='roc_auc')
-print("Mean AUC-ROC score-XGBoost:", np.mean(cv_scores_xgb))
-
 # ROC Curve and AUC for MLP 
 fpr, tpr, thresholds = roc_curve(y_test, y_test_pred_mlp)
 roc_auc = auc(fpr, tpr)
@@ -242,7 +235,6 @@ plt.show()
 # Calculate AUC-ROC Score
 auc_roc = roc_auc_score(y_test, y_test_pred_mlp)
 print("AUC-ROC Score-MLP:", auc_roc)
-
 
 # ROC Curve and AUC for RF 
 fpr, tpr, thresholds = roc_curve(y_test, y_test_prob_rf)
@@ -272,6 +264,7 @@ def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix'
         print('Confusion matrix, without normalization')
 
     print(cm)
+    plt.figure(figsize=(10, 8)) 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
     plt.colorbar()
@@ -319,40 +312,41 @@ plt.show()
 
 # SHAP Analysis for Logistic Regression
 shap.initjs()
-
-explainer = shap.Explainer(best_logreg, X_train)
-shap_values = explainer(X_test)
-
-# Summary Plot
+explainer_logreg = shap.Explainer(best_logreg, X_train)
+shap_log = explainer_logreg(X_test)
+plt.figure(figsize=(12, 8))
 plt.title("SHAP Summary Plot - Logistic Regression")
-shap.summary_plot(shap_values, X_test, feature_names=X.columns)
+plt.tight_layout()
+shap.summary_plot(shap_log, X_test, feature_names=X.columns, plot_size=(15,8))
 
 # SHAP Analysis for XGBoost
 explainer_xgb = shap.TreeExplainer(best_xgb)
-
-# Summary Plot
-shap_values_xgb = explainer_xgb(X_val_selected)  
+shap_xgb = explainer_xgb(X_val_selected)
+plt.figure(figsize=(12, 8))
 plt.title("SHAP Summary Plot - XGBoost")
-
-shap.summary_plot(shap_values_xgb, X_val_selected, feature_names=X.columns)
+plt.tight_layout()
+shap.summary_plot(shap_xgb, X_val_selected, feature_names=X.columns, plot_size=(15,8))
 
 # SHAP Analysis for MLP
 explainer_mlp = shap.Explainer(best_mlp, X_train)
-
-# Summary Plot
-shap_values_mlp = explainer_mlp(X_test)  
+shap_mlp = explainer_mlp(X_test)
+plt.figure(figsize=(12, 8))
 plt.title("SHAP Summary Plot - MLP")
+plt.tight_layout()
+shap.summary_plot(shap_mlp, X_test, feature_names=X.columns, plot_size=(15,8))
 
-shap.summary_plot(shap_values_mlp, X_test, feature_names=X.columns)
+# SHAP Analysis for Random Forest
 
-# SHAP Analysis for RF
 explainer_rf = shap.TreeExplainer(best_rf)
 
-shaprf = explainer_rf.shap_values(X_test_selected_rf)
-#Summary Plot
-shaprf = shaprf[:, :, 1]
-plt.title("SHAP Summary Plot - RF")
-shap.summary_plot(shaprf, X_test_selected_rf, feature_names=selected_feature_names)
+shap_rf = explainer_rf.shap_values(X_test_selected_rf)
+shap_rf = shap_rf[:, :, 1]
+plt.figure(figsize=(12, 8))
+plt.title("SHAP Summary Plot - Random Forest")
+plt.tight_layout()
+shap.summary_plot(shap_rf, X_test_selected_rf, feature_names=selected_feature_names, plot_size=(15,8))
 plt.show()
+
+
 
 
